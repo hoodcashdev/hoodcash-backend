@@ -22,8 +22,8 @@ export const config = {
   // (= defaultLaunchpad) exposes collectFees(token) and pushes the recipient share to
   // whatever address is set as the token's feeWallet — which is our Router.
   defaultPairAsset: req("DEFAULT_PAIR_ASSET") as `0x${string}`,   // WETH 0x0bd7…acad73
-  defaultLaunchpad: req("DEFAULT_LAUNCHPAD") as `0x${string}`,    // Pons locker 0x736D…7F35
-  ponsFactory: opt("PONS_FACTORY", "0xA5aAb3F0c6EeadF30Ef1D3Eb997108E976351feB") as `0x${string}`,
+  defaultLaunchpad: opt("DEFAULT_LAUNCHPAD", "0x267444D099b10fB5Ed7c3Cc7B7c767AdcA574952") as `0x${string}`, // Pons V2 fee locker
+  ponsFactory: opt("PONS_FACTORY", "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e") as `0x${string}`, // Pons V2 factory
   // Custodial rails (bank / X Money): payees route to this operator wallet, which the
   // keeper sweeps and off-ramps via Stripe/Kraken. Crypto rail binds the creator's own wallet.
   custodyWallet: opt("CUSTODY_WALLET", "") as `0x${string}` | "",
