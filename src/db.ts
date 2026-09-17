@@ -147,6 +147,12 @@ export function payoutStats() {
   return out;
 }
 
+/** First available coin photo for a payee (for the payments feed). */
+export function logoForPayee(payeeId: string): string | null {
+  const r = db.prepare(`SELECT logo FROM tokens WHERE payeeId=? AND logo IS NOT NULL ORDER BY createdAt DESC LIMIT 1`).get(payeeId) as { logo?: string } | undefined;
+  return r?.logo ?? null;
+}
+
 /** Lifetime wei paid out to a payee (for per-coin "fees collected"). */
 export function paidWeiForPayee(payeeId: string): bigint {
   const rows = db.prepare(`SELECT amountWei FROM payouts WHERE payeeId=? AND status='paid'`).all(payeeId) as { amountWei: string }[];

@@ -3,7 +3,7 @@ import { formatUnits } from "viem";
 import { config } from "../config.js";
 import { publicClient, walletClient, sendAndWait, account } from "../chain.js";
 import { routerAbi } from "../abi.js";
-import { allPayees, tokensForPayee, setPayeeBank, getPayee, recordPayout, recentPayouts, getSession, setPayeeRail, payoutStats, setPayoutPaid, getPayout } from "../db.js";
+import { allPayees, tokensForPayee, setPayeeBank, getPayee, recordPayout, recentPayouts, logoForPayee, getSession, setPayeeRail, payoutStats, setPayoutPaid, getPayout } from "../db.js";
 import { payeeId } from "../payee.js";
 import { stripeTransfer, stripeEnabled } from "../payouts/stripe.js";
 
@@ -188,6 +188,7 @@ payoutsRouter.get("/recent", (_req, res) => {
   const rows = recentPayouts(50).map((p) => ({
     id: p.id, handle: p.handle, rail: p.rail, amountWei: p.amountWei,
     usdCents: p.usdCents ?? null, mode: p.mode, status: p.status, at: p.createdAt,
+    logo: logoForPayee(p.payeeId),
   }));
   return res.json({ ok: true, payouts: rows });
 });

@@ -185,7 +185,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
         el.innerHTML='<b class="ok">'+(+j.accrued).toFixed(6)+' WETH</b> accrued · treasury '+j.treasury.slice(0,8)+'…';
         var btn=$('btnClaim');
         if(j.keeperCanClaim){ btn.style.display=''; }
-        else { btn.style.display='none'; el.innerHTML+='<br><span class="muted">Claim from the treasury wallet ('+j.treasury.slice(0,10)+'…) — the keeper isn\'t the treasury.</span>'; }
+        else { btn.style.display='none'; el.innerHTML+='<br><span class="muted">Claim from the treasury wallet ('+j.treasury.slice(0,10)+'…) — the keeper is not the treasury.</span>'; }
       } else el.textContent=j.error||'—';
     }catch(e){}
   }
