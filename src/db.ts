@@ -73,6 +73,8 @@ for (const col of [
   ["payees", "payoutHint", "TEXT"],
   ["payouts", "usdCents", "INTEGER"],
   ["tokens", "creator", "TEXT"],
+  ["tokens", "logo", "TEXT"],
+  ["tokens", "curve", "TEXT"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${col[0]})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === col[1])) {
@@ -81,15 +83,15 @@ for (const col of [
 }
 
 // ---- tokens ----
-export function upsertToken(t: { address: string; payeeId: string; asset: string; launchpad: string; creator?: string | null }) {
+export function upsertToken(t: { address: string; payeeId: string; asset: string; launchpad: string; creator?: string | null; logo?: string | null; curve?: string | null }) {
   db.prepare(
-    `INSERT INTO tokens (address, payeeId, asset, launchpad, creator, createdAt)
-     VALUES (@address, @payeeId, @asset, @launchpad, @creator, @createdAt)
-     ON CONFLICT(address) DO UPDATE SET payeeId=excluded.payeeId, asset=excluded.asset, launchpad=excluded.launchpad, creator=COALESCE(excluded.creator, tokens.creator)`,
-  ).run({ creator: null, ...t, address: t.address.toLowerCase(), createdAt: Date.now() });
+    `INSERT INTO tokens (address, payeeId, asset, launchpad, creator, logo, curve, createdAt)
+     VALUES (@address, @payeeId, @asset, @launchpad, @creator, @logo, @curve, @createdAt)
+     ON CONFLICT(address) DO UPDATE SET payeeId=excluded.payeeId, asset=excluded.asset, launchpad=excluded.launchpad, creator=COALESCE(excluded.creator, tokens.creator), logo=COALESCE(excluded.logo, tokens.logo), curve=COALESCE(excluded.curve, tokens.curve)`,
+  ).run({ creator: null, logo: null, curve: null, ...t, address: t.address.toLowerCase(), createdAt: Date.now() });
 }
-export function allTokens(): { address: string; payeeId: string; asset: string; launchpad: string; creator?: string }[] {
-  return db.prepare(`SELECT address, payeeId, asset, launchpad, creator, createdAt FROM tokens ORDER BY createdAt DESC`).all() as any[];
+export function allTokens(): { address: string; payeeId: string; asset: string; launchpad: string; creator?: string; logo?: string; curve?: string }[] {
+  return db.prepare(`SELECT address, payeeId, asset, launchpad, creator, logo, curve, createdAt FROM tokens ORDER BY createdAt DESC`).all() as any[];
 }
 export function tokensForPayee(payeeId: string) {
   return db.prepare(`SELECT address, payeeId, asset, launchpad FROM tokens WHERE payeeId = ?`).all(payeeId) as any[];
@@ -143,6 +145,13 @@ export function payoutStats() {
   const out: Record<string, { count: number; usdCents: number }> = {};
   for (const r of rows) out[r.rail] = { count: r.n, usdCents: r.cents };
   return out;
+}
+
+/** Lifetime wei paid out to a payee (for per-coin "fees collected"). */
+export function paidWeiForPayee(payeeId: string): bigint {
+  const rows = db.prepare(`SELECT amountWei FROM payouts WHERE payeeId=? AND status='paid'`).all(payeeId) as { amountWei: string }[];
+  let sum = 0n; for (const r of rows) { try { sum += BigInt(r.amountWei); } catch {} }
+  return sum;
 }
 
 /** Flip a pending payout to paid (after a manual X Money / bank send). */

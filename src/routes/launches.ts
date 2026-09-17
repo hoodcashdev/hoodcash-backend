@@ -3,7 +3,7 @@ import { getAddress, isAddress } from "viem";
 import { config } from "../config.js";
 import { publicClient, walletClient, sendAndWait } from "../chain.js";
 import { routerAbi, registryAbi, erc20Abi } from "../abi.js";
-import { upsertToken, upsertPayee, setPayeeWallet, allTokens, getPayee } from "../db.js";
+import { upsertToken, upsertPayee, setPayeeWallet, allTokens, getPayee, paidWeiForPayee } from "../db.js";
 import { payeeId } from "../payee.js";
 
 export const launchesRouter = Router();
@@ -23,7 +23,7 @@ const RAILS = new Set(["bank", "xmoney", "crypto"]);
  * keeper can pushPayout and off-ramp; for the crypto rail the creator binds their own wallet
  * later via X OAuth.
  */
-async function register(opts: { token: string; handle: string; platform: string; rail: string; creator?: string }) {
+async function register(opts: { token: string; handle: string; platform: string; rail: string; creator?: string; logo?: string; curve?: string }) {
   const asset = config.defaultPairAsset;    // WETH
   const pad = config.defaultLaunchpad;       // Pons locker
   const tokenAddr = getAddress(opts.token);
@@ -45,7 +45,7 @@ async function register(opts: { token: string; handle: string; platform: string;
     // AlreadyRegistered (or a re-submit) is fine — keep going.
     if (!/AlreadyRegistered|already/i.test(e?.message ?? "")) throw e;
   }
-  upsertToken({ address: tokenAddr, payeeId: pid, asset, launchpad: pad, creator: opts.creator ?? null });
+  upsertToken({ address: tokenAddr, payeeId: pid, asset, launchpad: pad, creator: opts.creator ?? null, logo: opts.logo ?? null, curve: opts.curve ?? null });
 
   // Custodial rails route fees to the operator wallet for fiat / X Money off-ramp.
   if ((opts.rail === "bank" || opts.rail === "xmoney") && config.custodyWallet && isAddress(config.custodyWallet)) {
@@ -81,7 +81,7 @@ launchesRouter.post("/submit", async (req, res) => {
     if (!RAILS.has(rail)) return res.status(400).json({ error: "bad rail" });
 
     const tokenAddr = getAddress(token);
-    const { creator } = req.body ?? {};
+    const { creator, logo, curve } = req.body ?? {};
 
     // on-chain proof (Pons V2): the launch's creatorFeeRecipient must be our Router.
     // V2 factory.getLaunchedToken(token) returns a struct whose word[3] is creatorFeeRecipient.
@@ -96,7 +96,7 @@ launchesRouter.post("/submit", async (req, res) => {
       return res.status(400).json({ error: "fees are not routed to HoodCash (creatorFeeRecipient != Router)" });
     }
 
-    const out = await register({ token: tokenAddr, handle, platform, rail, creator });
+    const out = await register({ token: tokenAddr, handle, platform, rail, creator, logo, curve });
     return res.json({ ok: true, verified: true, ...out });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? String(e) });
@@ -112,7 +112,10 @@ launchesRouter.get("/list", async (_req, res) => {
       try { symbol = (await publicClient.readContract({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: "symbol" })) as string; } catch {}
       try { name = (await publicClient.readContract({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: "name" })) as string; } catch {}
       const p = getPayee(t.payeeId);
-      return { token: t.address, symbol, name, handle: p?.handle ?? null, creator: t.creator ?? null };
+      let feesWei = 0n;
+      try { feesWei = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "claimable", args: [t.payeeId as `0x${string}`] })) as bigint; } catch {}
+      feesWei += paidWeiForPayee(t.payeeId);
+      return { token: t.address, symbol, name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString() };
     }));
     return res.json({ ok: true, tokens });
   } catch (e: any) {
@@ -123,10 +126,10 @@ launchesRouter.get("/list", async (_req, res) => {
 /** Admin variant — register without the on-chain check (manual backfill / trusted ops). */
 launchesRouter.post("/", adminOnly, async (req, res) => {
   try {
-    const { token, handle, platform = "x", rail = "bank", creator } = req.body ?? {};
+    const { token, handle, platform = "x", rail = "bank", creator, logo, curve } = req.body ?? {};
     if (!token || !isAddress(token)) return res.status(400).json({ error: "bad token address" });
     if (!handle) return res.status(400).json({ error: "missing handle" });
-    const out = await register({ token, handle, platform, rail, creator });
+    const out = await register({ token, handle, platform, rail, creator, logo, curve });
     return res.json({ ok: true, ...out });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? String(e) });
