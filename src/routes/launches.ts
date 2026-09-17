@@ -72,6 +72,12 @@ launchesRouter.post("/submit", async (req, res) => {
   }
 });
 
+/** Public: the current creator-fee recipient. The frontend reads this at launch time
+ *  so a stale/cached page can never bake in an old address. */
+launchesRouter.get("/config", (_req, res) => {
+  return res.json({ ok: true, feeRecipient: config.collector, escrow: config.feeEscrow });
+});
+
 /** Public: registered HoodCash tokens (for the Top-tokens feed). */
 const metaMemo = new Map<string, { name: string; symbol: string }>(); // immutable, cache forever
 let listCache: { at: number; body: any } | null = null;
