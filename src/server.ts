@@ -91,6 +91,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
   </div><div id="omsg" class="sub" style="margin-top:8px"></div>
 </div>
 <div class="card"><b>Recent payouts</b><div id="recent" class="muted" style="margin-top:8px">—</div></div>
+<div class="card"><b>Recent off-ramps</b><div id="orecent" class="muted" style="margin-top:8px">—</div></div>
 <script>
 (function(){
   var $=function(id){return document.getElementById(id);};
@@ -144,7 +145,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
     try{
       var r=await fetch('/offramps/log',{method:'POST',headers:H(),body:JSON.stringify(body)});
       var j=await r.json();
-      if(j.ok){om.textContent='Logged '+(kind==='ach'?'ACH USD \u2192 X Money':'deposit ETH \u2192 Kraken')+'.';om.className='sub ok';$('oamt').value='';$('onote').value='';}
+      if(j.ok){om.textContent='Logged '+(kind==='ach'?'ACH USD \u2192 X Money':'deposit ETH \u2192 Kraken')+'.';om.className='sub ok';$('oamt').value='';$('onote').value='';loadOfframps();}
       else{om.textContent=j.error||'Failed.';om.className='sub err';}
     }catch(e){om.textContent='Network error.';om.className='sub err';}
   }
@@ -157,7 +158,18 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
         }).join('')+'</table>' : '<span class="muted">No payouts logged yet.</span>';
     }catch(e){}
   }
-  if(T)load(); else loadRecent();
+  function ethf(wei){ if(wei==null)return '—'; try{var v=Number(BigInt(wei))/1e18; return (v>0&&v<0.0001?v.toExponential(2):v.toFixed(4))+' ETH';}catch(e){return '—';} }
+  async function loadOfframps(){
+    try{
+      var r=await fetch('/offramps/recent');var j=await r.json();var os=j.offramps||[];
+      $('orecent').innerHTML = os.length ?
+        '<table><tr><th>Type</th><th>Amount</th><th>To</th><th>Mode</th><th>When</th></tr>'+os.map(function(o){
+          var isDep=o.kind==='deposit';
+          return '<tr><td><span class="tag '+(isDep?'':'bank')+'">'+(isDep?'DEPOSIT':'ACH')+'</span></td><td>'+(isDep?ethf(o.amountWei):usd(o.usdCents))+'</td><td>'+(isDep?'Kraken':'X Money')+'</td><td class="muted">'+esc(o.mode)+'</td><td class="muted">'+new Date(o.at).toLocaleString()+'</td></tr>';
+        }).join('')+'</table>' : '<span class="muted">No off-ramps logged yet.</span>';
+    }catch(e){}
+  }
+  if(T){load();loadOfframps();} else {loadRecent();loadOfframps();}
 })();
 </script></body></html>`);
   });

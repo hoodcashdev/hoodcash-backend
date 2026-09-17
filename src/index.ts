@@ -19,6 +19,9 @@ async function main() {
   try { await scanDeposits(); } catch (e: any) { console.error(`[boot] deposit scan failed: ${e?.message ?? e}`); }
 
   // scheduled: index new launches, then sweep fees
+  // deposits: poll fast so an ETH->Kraken send shows within ~30s, not on the 5-min cron
+  setInterval(() => { scanDeposits().catch((e) => console.error(`[deposits] ${e?.message ?? e}`)); }, 30_000);
+
   cron.schedule(config.collectCron, async () => {
     try {
       await syncTokens();
