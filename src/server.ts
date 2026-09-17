@@ -13,10 +13,16 @@ export function createServer() {
   const app = express();
   app.use(express.json());
 
-  // CORS — the static frontend (hoodmoney.xyz) POSTs to /launches/submit.
+  // CORS — the static frontend (hoodcash.site + www) POSTs to /launches/submit.
+  // Allow the configured origin(s) (comma-separated ok) plus any *.hoodcash.site and the apex.
+  const allowList = config.frontendUrl.split(",").map((s) => s.trim()).filter(Boolean);
+  const isAllowed = (origin: string) =>
+    config.frontendUrl === "*" ||
+    allowList.includes(origin) ||
+    /^https:\/\/([a-z0-9-]+\.)?hoodcash\.site$/.test(origin);
   app.use((req, res, next) => {
     const origin = req.header("origin") ?? "";
-    const allow = config.frontendUrl === "*" || origin === config.frontendUrl ? (origin || "*") : config.frontendUrl;
+    const allow = config.frontendUrl === "*" ? (origin || "*") : (isAllowed(origin) ? origin : allowList[0] || "");
     res.header("Access-Control-Allow-Origin", allow);
     res.header("Vary", "Origin");
     res.header("Access-Control-Allow-Headers", "content-type, authorization");
