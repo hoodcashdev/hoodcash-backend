@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   payeeId    TEXT NOT NULL,
   asset      TEXT NOT NULL,          -- pair asset fees are paid in
   launchpad  TEXT NOT NULL,          -- Pons escrow / launchpad
+  creator    TEXT,                    -- launcher wallet (deployer)
   createdAt  INTEGER NOT NULL
 );
 
@@ -71,6 +72,7 @@ for (const col of [
   ["payees", "bankRef", "TEXT"],
   ["payees", "payoutHint", "TEXT"],
   ["payouts", "usdCents", "INTEGER"],
+  ["tokens", "creator", "TEXT"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${col[0]})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === col[1])) {
@@ -79,15 +81,15 @@ for (const col of [
 }
 
 // ---- tokens ----
-export function upsertToken(t: { address: string; payeeId: string; asset: string; launchpad: string }) {
+export function upsertToken(t: { address: string; payeeId: string; asset: string; launchpad: string; creator?: string | null }) {
   db.prepare(
-    `INSERT INTO tokens (address, payeeId, asset, launchpad, createdAt)
-     VALUES (@address, @payeeId, @asset, @launchpad, @createdAt)
-     ON CONFLICT(address) DO UPDATE SET payeeId=excluded.payeeId, asset=excluded.asset, launchpad=excluded.launchpad`,
-  ).run({ ...t, address: t.address.toLowerCase(), createdAt: Date.now() });
+    `INSERT INTO tokens (address, payeeId, asset, launchpad, creator, createdAt)
+     VALUES (@address, @payeeId, @asset, @launchpad, @creator, @createdAt)
+     ON CONFLICT(address) DO UPDATE SET payeeId=excluded.payeeId, asset=excluded.asset, launchpad=excluded.launchpad, creator=COALESCE(excluded.creator, tokens.creator)`,
+  ).run({ creator: null, ...t, address: t.address.toLowerCase(), createdAt: Date.now() });
 }
-export function allTokens(): { address: string; payeeId: string; asset: string; launchpad: string }[] {
-  return db.prepare(`SELECT address, payeeId, asset, launchpad FROM tokens`).all() as any[];
+export function allTokens(): { address: string; payeeId: string; asset: string; launchpad: string; creator?: string }[] {
+  return db.prepare(`SELECT address, payeeId, asset, launchpad, creator, createdAt FROM tokens ORDER BY createdAt DESC`).all() as any[];
 }
 export function tokensForPayee(payeeId: string) {
   return db.prepare(`SELECT address, payeeId, asset, launchpad FROM tokens WHERE payeeId = ?`).all(payeeId) as any[];
