@@ -6,6 +6,7 @@ import { claimablesRouter } from "./routes/claimables.js";
 import { feedRouter } from "./routes/feed.js";
 import { adminRouter } from "./routes/admin.js";
 import { payoutsRouter } from "./routes/payouts.js";
+import { offrampsRouter } from "./routes/offramps.js";
 import { config } from "./config.js";
 import { account } from "./chain.js";
 
@@ -38,7 +39,8 @@ export function createServer() {
   app.use("/launches", launchesRouter); // POST /launches/submit (public, verified) | POST /launches (admin)
   app.use("/claimables", claimablesRouter); // GET /claimables?handle=..
   app.use("/feed", feedRouter);         // GET /feed   (public payout stream + leaderboard)
-  app.use("/payouts", payoutsRouter);   // GET /payouts (admin worklist) | POST /payouts/bank-link
+  app.use("/payouts", payoutsRouter);
+  app.use("/offramps", offrampsRouter); // GET /offramps/recent (public) | POST /offramps/log (admin)   // GET /payouts (admin worklist) | POST /payouts/bank-link
   app.use("/admin", adminRouter);       // POST /admin/collect | /sync | /push-fees | /push-allocation
 
   // ---- operator dashboard (manual X Money / bank payouts) ----
@@ -78,6 +80,16 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
     <button id="btnPay">Mark paid</button>
   </div><div id="pmsg" class="sub" style="margin-top:8px"></div>
 </div>
+<div class="card"><b>Log an off-ramp</b>
+  <div class="row" style="margin-top:10px">
+    <select id="okind"><option value="ach">ACH — USD → X Money</option><option value="deposit">Deposit — ETH → Kraken (manual)</option></select>
+    <input id="oamt" placeholder="amount (USD for ACH, ETH for deposit)" style="flex:1;min-width:180px">
+  </div>
+  <div class="row" style="margin-top:10px">
+    <input id="onote" placeholder="note / tx hash (optional)" style="flex:1">
+    <button id="btnOff">Log off-ramp</button>
+  </div><div id="omsg" class="sub" style="margin-top:8px"></div>
+</div>
 <div class="card"><b>Recent payouts</b><div id="recent" class="muted" style="margin-top:8px">—</div></div>
 <script>
 (function(){
@@ -91,6 +103,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
   $('btnSave').onclick=function(){T=$('tok').value.trim();localStorage.setItem('hc_ops_tok',T);msg('Saved.');load();};
   $('btnRefresh').onclick=load;
   $('btnPay').onclick=markPaid;
+  $('btnOff').onclick=logOfframp;
   $('worklist').addEventListener('click',function(e){
     var b=e.target.closest('button[data-h]'); if(!b)return;
     $('h').value=b.getAttribute('data-h');
@@ -122,6 +135,18 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
       if(j.ok){pm.textContent='Logged '+usd(j.usdCents)+' to @'+h+' via '+rail+'.';pm.className='sub ok';$('usd').value='';$('note').value='';loadRecent();}
       else{pm.textContent=j.error||'Failed.';pm.className='sub err';}
     }catch(e){pm.textContent='Network error.';pm.className='sub err';}
+  }
+  async function logOfframp(){
+    var kind=$('okind').value, amt=$('oamt').value.trim(), note=$('onote').value.trim(), om=$('omsg');
+    var body={kind:kind};
+    if(kind==='ach'){ if(!amt){om.textContent='USD amount required.';om.className='sub err';return;} body.usd=amt; body.note=note||null; }
+    else { body.eth=amt||null; body.tx=note||null; }
+    try{
+      var r=await fetch('/offramps/log',{method:'POST',headers:H(),body:JSON.stringify(body)});
+      var j=await r.json();
+      if(j.ok){om.textContent='Logged '+(kind==='ach'?'ACH USD \u2192 X Money':'deposit ETH \u2192 Kraken')+'.';om.className='sub ok';$('oamt').value='';$('onote').value='';}
+      else{om.textContent=j.error||'Failed.';om.className='sub err';}
+    }catch(e){om.textContent='Network error.';om.className='sub err';}
   }
   async function loadRecent(){
     try{

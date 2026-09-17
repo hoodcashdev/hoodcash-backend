@@ -4,6 +4,7 @@ import { createServer } from "./server.js";
 import { account } from "./chain.js";
 import { runCollect } from "./jobs/collector.js";
 import { syncTokens } from "./jobs/indexer.js";
+import { scanDeposits } from "./jobs/deposits.js";
 
 async function main() {
   const app = createServer();
@@ -15,12 +16,14 @@ async function main() {
 
   // initial sync so the collector has a token list even after a DB reset
   try { await syncTokens(); } catch (e: any) { console.error(`[boot] sync failed: ${e?.message ?? e}`); }
+  try { await scanDeposits(); } catch (e: any) { console.error(`[boot] deposit scan failed: ${e?.message ?? e}`); }
 
   // scheduled: index new launches, then sweep fees
   cron.schedule(config.collectCron, async () => {
     try {
       await syncTokens();
       await runCollect();
+      await scanDeposits();
     } catch (e: any) {
       console.error(`[cron] ${e?.message ?? e}`);
     }

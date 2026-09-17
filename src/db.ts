@@ -49,6 +49,19 @@ CREATE TABLE IF NOT EXISTS payouts (
   createdAt  INTEGER NOT NULL
 );
 
+-- off-ramp ledger: ETH->Kraken deposits (auto) and USD->X Money ACH (manual)
+CREATE TABLE IF NOT EXISTS offramps (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind       TEXT NOT NULL,          -- 'deposit' (ETH->Kraken) | 'ach' (USD->X Money)
+  amountWei  TEXT,                   -- ETH wei (deposit)
+  usdCents   INTEGER,                -- fiat cents (ach)
+  dest       TEXT,                   -- 'Kraken' | 'X Money' | address/label
+  ref        TEXT,                   -- tx hash (deposit) / note (ach)
+  mode       TEXT NOT NULL,          -- 'auto' | 'manual'
+  createdAt  INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS offramps_ref ON offramps(ref) WHERE ref IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS meta ( k TEXT PRIMARY KEY, v TEXT );
 `);
 
@@ -140,6 +153,26 @@ export function getPayout(id: number) {
 }
 export function recentPayouts(limit = 50) {
   return db.prepare(`SELECT * FROM payouts ORDER BY id DESC LIMIT ?`).all(limit) as any[];
+}
+
+// ---- off-ramp ----
+export function recordOfframp(o: {
+  kind: string; amountWei?: string | null; usdCents?: number | null;
+  dest?: string | null; ref?: string | null; mode: string;
+}) {
+  try {
+    const r = db.prepare(
+      `INSERT INTO offramps (kind, amountWei, usdCents, dest, ref, mode, createdAt)
+       VALUES (@kind, @amountWei, @usdCents, @dest, @ref, @mode, @createdAt)`,
+    ).run({ amountWei: null, usdCents: null, dest: null, ref: null, ...o, createdAt: Date.now() });
+    return r.lastInsertRowid as number;
+  } catch (e: any) {
+    if (String(e?.message || e).includes("UNIQUE")) return -1; // already logged (auto dedupe by ref)
+    throw e;
+  }
+}
+export function recentOfframps(limit = 60) {
+  return db.prepare(`SELECT * FROM offramps ORDER BY id DESC LIMIT ?`).all(limit) as any[];
 }
 
 // ---- sessions ----

@@ -27,9 +27,6 @@ export const config = {
   // Custodial rails (bank / X Money): payees route to this operator wallet, which the
   // keeper sweeps and off-ramps via Stripe/Kraken. Crypto rail binds the creator's own wallet.
   custodyWallet: opt("CUSTODY_WALLET", "") as `0x${string}` | "",
-  // Off-ramp: your Kraken (Robinhood Chain) ETH deposit address. The keeper watches for
-  // ETH sent from the keeper wallet to this address and auto-logs each as a "deposit".
-  krakenDeposit: opt("KRAKEN_DEPOSIT_ADDRESS", "") as `0x${string}` | "",
   deployBlock: BigInt(opt("DEPLOY_BLOCK", "0")),
   feedLookbackBlocks: BigInt(opt("FEED_LOOKBACK_BLOCKS", "200000")),
 
