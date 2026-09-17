@@ -92,7 +92,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
 </div>
 <div class="card"><b>Protocol fees (15%)</b>
   <div id="pfstat" class="sub" style="margin-top:8px">—</div>
-  <button id="btnClaim" style="margin-top:6px">Claim 15% to keeper</button>
+  <button id="btnClaim" style="margin-top:6px;display:none">Claim 15% to keeper</button>
   <div id="cmsg" class="sub" style="margin-top:8px"></div>
 </div>
 <div class="card"><b>Recent payouts</b><div id="recent" class="muted" style="margin-top:8px">—</div></div>
@@ -111,7 +111,15 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
   $('btnPay').onclick=markPaid;
   $('btnOff').onclick=logOfframp;
   $('btnClaim').onclick=claimProtocol;
-  $('worklist').addEventListener('click',function(e){
+  $('worklist').addEventListener('click',async function(e){
+    var sw=e.target.closest('button[data-sweep]');
+    if(sw){ var hh=sw.getAttribute('data-sweep'); sw.disabled=true; sw.textContent='Sweeping…';
+      try{ var r=await fetch('/payouts/sweep',{method:'POST',headers:H(),body:JSON.stringify({handle:hh})}); var j=await r.json();
+        if(j.ok){ msg('Swept '+(+j.amount).toFixed(6)+' WETH for @'+hh+' to keeper.'); load(); }
+        else { msg(j.error||'Sweep failed.',1); sw.disabled=false; sw.textContent='Sweep 85%'; }
+      }catch(_){ msg('Network error.',1); sw.disabled=false; sw.textContent='Sweep 85%'; }
+      return;
+    }
     var b=e.target.closest('button[data-h]'); if(!b)return;
     $('h').value=b.getAttribute('data-h');
     var r=b.getAttribute('data-r'); if(r&&r!=='unset')$('rail').value=(r==='bank'?'bank':'xmoney');
@@ -127,7 +135,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
       msg('Loaded '+(j.payees||[]).length+' handles.');
       $('worklist').innerHTML = rows.length ?
         '<table><tr><th>Handle</th><th>Rail</th><th>Owed (WETH)</th><th></th></tr>'+rows.map(function(p){
-          return '<tr><td>@'+esc(p.handle)+'</td><td><span class="tag '+(p.rail==='bank'?'bank':'')+'">'+esc(p.rail)+'</span></td><td>'+(+p.owedWeth).toFixed(6)+'</td><td><button class="ghost" data-h="'+esc(p.handle)+'" data-r="'+esc(p.rail)+'">Log</button></td></tr>';
+          return '<tr><td>@'+esc(p.handle)+'</td><td><span class="tag '+(p.rail==='bank'?'bank':'')+'">'+esc(p.rail)+'</span></td><td>'+(+p.owedWeth).toFixed(6)+'</td><td><button class="ghost" data-h="'+esc(p.handle)+'" data-r="'+esc(p.rail)+'">Log</button> <button data-sweep="'+esc(p.handle)+'">Sweep 85%</button></td></tr>';
         }).join('')+'</table>' : '<span class="muted">Nothing owed yet.</span>';
     }catch(e){msg('Network error.',1);}
     loadRecent();

@@ -164,6 +164,25 @@ payoutsRouter.post("/claim-protocol", adminOnly, async (_req, res) => {
   } catch (e: any) { return res.status(500).json({ error: e?.message ?? String(e) }); }
 });
 
+/** Sweep a handle's on-chain 85% (claimable WETH) to its bound custody wallet via pushPayout. */
+payoutsRouter.post("/sweep", adminOnly, async (req, res) => {
+  try {
+    const { handle, platform = "x" } = req.body ?? {};
+    if (!handle) return res.status(400).json({ error: "missing handle" });
+    const pid = payeeId(platform, handle);
+    const payee = getPayee(pid);
+    if (!payee) return res.status(404).json({ error: "unknown handle" });
+    if (!payee.wallet) return res.status(400).json({ error: "not bound yet — needs a launch registered to this handle" });
+    const owed = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "claimable", args: [pid, config.defaultPairAsset] })) as bigint;
+    if (owed === 0n) return res.status(400).json({ error: "nothing to sweep" });
+    const receipt = await sendAndWait(
+      () => walletClient.writeContract({ address: config.router, abi: routerAbi, functionName: "pushPayout", args: [pid, config.defaultPairAsset, owed] }),
+      `sweep(${handle} ${owed})`,
+    );
+    return res.json({ ok: true, handle, amountWei: owed.toString(), amount: formatUnits(owed, 18), to: payee.wallet, tx: receipt.transactionHash });
+  } catch (e: any) { return res.status(500).json({ error: e?.message ?? String(e) }); }
+});
+
 /** Public payout stream for the site's "every payout public" feed. */
 payoutsRouter.get("/recent", (_req, res) => {
   const rows = recentPayouts(50).map((p) => ({
