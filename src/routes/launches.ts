@@ -104,21 +104,33 @@ launchesRouter.post("/submit", async (req, res) => {
 });
 
 /** Public: registered HoodCash tokens (for the Top-tokens feed). */
+const metaMemo = new Map<string, { name: string; symbol: string }>(); // immutable, cache forever
+let listCache: { at: number; body: any } | null = null;
+const LIST_TTL = 20_000;
 launchesRouter.get("/list", async (_req, res) => {
   try {
+    if (listCache && Date.now() - listCache.at < LIST_TTL) return res.json(listCache.body);
     const toks = allTokens().slice(0, 60);
     const tokens = await Promise.all(toks.map(async (t) => {
-      let name = "", symbol = "?";
-      try { symbol = (await publicClient.readContract({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: "symbol" })) as string; } catch {}
-      try { name = (await publicClient.readContract({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: "name" })) as string; } catch {}
+      let meta = metaMemo.get(t.address);
+      if (!meta) {
+        let name = "", symbol = "?";
+        try { symbol = (await publicClient.readContract({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: "symbol" })) as string; } catch {}
+        try { name = (await publicClient.readContract({ address: t.address as `0x${string}`, abi: erc20Abi, functionName: "name" })) as string; } catch {}
+        meta = { name, symbol };
+        if (name || symbol !== "?") metaMemo.set(t.address, meta); // only cache once resolved
+      }
       const p = getPayee(t.payeeId);
       let feesWei = 0n;
       try { feesWei = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "claimable", args: [t.payeeId as `0x${string}`] })) as bigint; } catch {}
       feesWei += paidWeiForPayee(t.payeeId);
-      return { token: t.address, symbol, name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString() };
+      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString() };
     }));
-    return res.json({ ok: true, tokens });
+    const body = { ok: true, tokens };
+    listCache = { at: Date.now(), body };
+    return res.json(body);
   } catch (e: any) {
+    if (listCache) return res.json(listCache.body); // serve stale on RPC hiccup
     return res.status(500).json({ error: e?.message ?? String(e) });
   }
 });
