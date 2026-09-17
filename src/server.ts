@@ -68,6 +68,11 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
   <input id="tok" type="password" placeholder="Admin token" style="flex:1;min-width:200px">
   <button id="btnSave">Save</button><button class="ghost" id="btnRefresh">Refresh</button>
 </div><div id="msg" class="sub" style="margin:8px 0 0"></div></div>
+<div class="card"><b>Creator fees — escrow pool</b>
+  <div id="escstat" class="sub" style="margin:8px 0">Enter token + Refresh.</div>
+  <button id="btnClaimEsc">Claim all to custody</button>
+  <div id="escmsg" class="sub" style="margin-top:8px"></div>
+</div>
 <div class="card"><b>Owed to handles</b><div id="worklist" class="muted" style="margin-top:8px">Enter your token and Refresh.</div></div>
 <div class="card"><b>Log a payout</b>
   <div class="row" style="margin-top:10px">
@@ -111,6 +116,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
   $('btnPay').onclick=markPaid;
   $('btnOff').onclick=logOfframp;
   $('btnClaim').onclick=claimProtocol;
+  $('btnClaimEsc').onclick=claimEscrow;
   $('worklist').addEventListener('click',async function(e){
     var sw=e.target.closest('button[data-sweep]');
     if(sw){ var hh=sw.getAttribute('data-sweep'); sw.disabled=true; sw.textContent='Sweeping…';
@@ -209,7 +215,10 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
         }).join('')+'</table>' : '<span class="muted">No off-ramps logged yet.</span>';
     }catch(e){}
   }
+  async function loadEscrow(){ if(!T)return; try{ var r=await fetch('/payouts/escrow',{headers:H()}); if(r.status===401)return; var j=await r.json(); var el=$('escstat'); if(j.ok){ el.innerHTML='<b class="ok">'+(+j.eth).toFixed(6)+' ETH</b> claimable · to '+j.collector.slice(0,10)+'…'; } else el.textContent=j.error||'—'; }catch(e){} }
+  async function claimEscrow(){ var m=$('escmsg'); m.textContent='Claiming…'; m.className='sub'; try{ var r=await fetch('/payouts/claim-escrow',{method:'POST',headers:H()}); var j=await r.json(); if(j.ok){ m.textContent='Claimed '+(+j.eth).toFixed(6)+' ETH to custody · tx '+String(j.txHash).slice(0,12)+'…'; m.className='sub ok'; loadEscrow(); } else { m.textContent=j.error||'Failed.'; m.className='sub err'; } }catch(e){ m.textContent='Network error.'; m.className='sub err'; } }
   if(T){load();loadOfframps();loadProtocol();} else {loadRecent();loadOfframps();}
+  loadEscrow();
 })();
 </script></body></html>`);
   });

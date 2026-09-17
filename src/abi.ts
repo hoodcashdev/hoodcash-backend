@@ -94,3 +94,8 @@ export const lockerAbi = [
       { name: "initialBuyAmount", type: "uint256" },
     ] }] },
 ] as const;
+
+export const escrowAbi = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "who", type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "claim", stateMutability: "nonpayable", inputs: [], outputs: [] },
+] as const;

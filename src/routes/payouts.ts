@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { formatUnits } from "viem";
 import { config } from "../config.js";
 import { publicClient, walletClient, sendAndWait, account } from "../chain.js";
-import { routerAbi } from "../abi.js";
+import { routerAbi, escrowAbi } from "../abi.js";
 import { allPayees, tokensForPayee, setPayeeBank, getPayee, recordPayout, recentPayouts, logoForPayee, getSession, setPayeeRail, payoutStats, setPayoutPaid, getPayout } from "../db.js";
 import { payeeId } from "../payee.js";
 import { stripeTransfer, stripeEnabled } from "../payouts/stripe.js";
@@ -228,4 +228,33 @@ payoutsRouter.post("/confirm", adminOnly, (req, res) => {
   const usdCents = usd != null ? Math.round(Number(usd) * 100) : null;
   const changed = setPayoutPaid(Number(id), note, usdCents);
   return res.json({ ok: true, id: Number(id), changed });
+});
+
+
+/** Creator-fee pool sitting in the Pons escrow, credited to our collector wallet. */
+payoutsRouter.get("/escrow", adminOnly, async (_req, res) => {
+  try {
+    const bal = (await publicClient.readContract({ address: config.feeEscrow, abi: escrowAbi, functionName: "balanceOf", args: [config.collector] })) as bigint;
+    return res.json({ ok: true, collector: config.collector, balanceWei: bal.toString(), eth: formatUnits(bal, 18) });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message ?? String(e) });
+  }
+});
+
+/** Claim the whole creator-fee pool from the escrow to the collector wallet (keeper == collector). */
+payoutsRouter.post("/claim-escrow", adminOnly, async (_req, res) => {
+  try {
+    const bal = (await publicClient.readContract({ address: config.feeEscrow, abi: escrowAbi, functionName: "balanceOf", args: [config.collector] })) as bigint;
+    if (bal === 0n) return res.status(400).json({ error: "nothing to claim" });
+    if (account.address.toLowerCase() !== config.collector.toLowerCase()) {
+      return res.status(400).json({ error: `keeper (${account.address}) is not the collector (${config.collector}); claim from the collector wallet directly` });
+    }
+    const receipt = await sendAndWait(
+      () => walletClient.writeContract({ address: config.feeEscrow, abi: escrowAbi, functionName: "claim", args: [] }),
+      `claimEscrow(${bal})`,
+    );
+    return res.json({ ok: true, claimedWei: bal.toString(), eth: formatUnits(bal, 18), txHash: receipt.transactionHash });
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message ?? String(e) });
+  }
 });

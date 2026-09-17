@@ -27,6 +27,10 @@ export const config = {
   // Custodial rails (bank / X Money): payees route to this operator wallet, which the
   // keeper sweeps and off-ramps via Stripe/Kraken. Crypto rail binds the creator's own wallet.
   custodyWallet: opt("CUSTODY_WALLET", "") as `0x${string}` | "",
+  // Pons V2 credits creator fees as ONE aggregate native-ETH pool to the creatorFeeRecipient.
+  // We point launches at a wallet we control (the collector) and claim the pool via escrow.claim().
+  feeEscrow: opt("PONS_FEE_ESCROW", "0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e") as `0x${string}`,
+  collector: opt("COLLECTOR_ADDRESS", process.env.CUSTODY_WALLET || "0xaF8f048644F5596BB549E0EC74ccAD40BDFb3D01") as `0x${string}`,
   // Off-ramp: your Kraken (Robinhood Chain) ETH deposit address. The keeper watches for
   // ETH sent from the keeper wallet to this address and auto-logs each as a "deposit".
   krakenDeposit: opt("KRAKEN_DEPOSIT_ADDRESS", "") as `0x${string}` | "",

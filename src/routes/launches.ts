@@ -1,9 +1,9 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { getAddress, isAddress } from "viem";
 import { config } from "../config.js";
-import { publicClient, walletClient, sendAndWait } from "../chain.js";
-import { routerAbi, registryAbi, erc20Abi } from "../abi.js";
-import { upsertToken, upsertPayee, setPayeeWallet, allTokens, getPayee, paidWeiForPayee } from "../db.js";
+import { publicClient } from "../chain.js";
+import { erc20Abi } from "../abi.js";
+import { upsertToken, upsertPayee, allTokens, getPayee, paidWeiForPayee } from "../db.js";
 import { payeeId } from "../payee.js";
 
 export const launchesRouter = Router();
@@ -24,56 +24,16 @@ const RAILS = new Set(["bank", "xmoney", "crypto"]);
  * later via X OAuth.
  */
 async function register(opts: { token: string; handle: string; platform: string; rail: string; creator?: string; logo?: string; curve?: string }) {
-  const asset = config.defaultPairAsset;    // WETH
-  const pad = config.defaultLaunchpad;       // Pons locker
+  const asset = config.defaultPairAsset;
+  const pad = config.defaultLaunchpad;
   const tokenAddr = getAddress(opts.token);
   const pid = payeeId(opts.platform, opts.handle);
-
+  // Wallet-recipient model: creator fees route to config.collector (a wallet we control) and
+  // pile up as one aggregate pool in the Pons escrow. No on-chain registration/binding needed —
+  // we just record the token + handle so the dashboard can show it and attribute off-chain.
   upsertPayee({ payeeId: pid, platform: opts.platform, handle: opts.handle.replace(/^@/, ""), rail: opts.rail });
-
-  let txHash: string | undefined;
-  let alreadyRegistered = false;
-  try {
-    const info = (await publicClient.readContract({
-      address: config.router, abi: routerAbi, functionName: "tokenInfo", args: [tokenAddr],
-    })) as readonly [ `0x${string}`, boolean ];
-    alreadyRegistered = Array.isArray(info) ? !!info[1] : !!(info as any)?.registered;
-  } catch { /* fall through to attempt registration */ }
-  if (!alreadyRegistered) {
-    try {
-      const receipt = await sendAndWait(
-        () => walletClient.writeContract({
-          address: config.router, abi: routerAbi, functionName: "registerToken",
-          args: [tokenAddr, pid, asset, pad],
-        }),
-        `registerToken(${tokenAddr})`,
-      );
-      txHash = receipt.transactionHash;
-    } catch (e: any) {
-      // AlreadyRegistered (raw selector 0x3a81d6fc) or a re-submit is fine — keep going to bind.
-      if (!/AlreadyRegistered|already|0x3a81d6fc/i.test(e?.message ?? "")) throw e;
-    }
-  }
   upsertToken({ address: tokenAddr, payeeId: pid, asset, launchpad: pad, creator: opts.creator ?? null, logo: opts.logo ?? null, curve: opts.curve ?? null });
-
-  // Custodial rails route fees to the operator wallet for fiat / X Money off-ramp.
-  if ((opts.rail === "bank" || opts.rail === "xmoney") && config.custodyWallet && isAddress(config.custodyWallet)) {
-    const bound = (await publicClient.readContract({
-      address: config.registry, abi: registryAbi, functionName: "walletOf", args: [pid],
-    })) as string;
-    if (bound.toLowerCase() !== config.custodyWallet.toLowerCase()) {
-      await sendAndWait(
-        () => walletClient.writeContract({
-          address: config.registry, abi: registryAbi, functionName: "bindWallet",
-          args: [pid, getAddress(config.custodyWallet as string)],
-        }),
-        `bindWallet(custody ${pid.slice(0, 10)}..)`,
-      );
-      setPayeeWallet(pid, getAddress(config.custodyWallet as string));
-    }
-  }
-
-  return { token: tokenAddr, payeeId: pid, asset, launchpad: pad, rail: opts.rail, txHash };
+  return { token: tokenAddr, payeeId: pid, asset, launchpad: pad, rail: opts.rail };
 }
 
 /**
@@ -101,7 +61,7 @@ launchesRouter.post("/submit", async (req, res) => {
       const raw = r.data ?? "";
       if (raw.length >= 2 + 4 * 64) recip = "0x" + raw.slice(2 + 3 * 64 + 24, 2 + 4 * 64);
     } catch { /* not found / reverted */ }
-    if (!recip || recip.toLowerCase() !== config.router.toLowerCase()) {
+    if (!recip || recip.toLowerCase() !== config.collector.toLowerCase()) {
       return res.status(400).json({ error: "fees are not routed to HoodCash (creatorFeeRecipient != Router)" });
     }
 
@@ -130,9 +90,7 @@ launchesRouter.get("/list", async (_req, res) => {
         if (name || symbol !== "?") metaMemo.set(t.address, meta); // only cache once resolved
       }
       const p = getPayee(t.payeeId);
-      let feesWei = 0n;
-      try { feesWei = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "claimable", args: [t.payeeId as `0x${string}`] })) as bigint; } catch {}
-      feesWei += paidWeiForPayee(t.payeeId);
+      const feesWei = paidWeiForPayee(t.payeeId);
       return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString() };
     }));
     const body = { ok: true, tokens };
