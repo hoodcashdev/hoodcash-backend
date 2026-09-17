@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS payouts (
   ref        TEXT,                   -- stripe payout id / tx hash / note
   mode       TEXT NOT NULL,          -- stripe | manual | onchain
   status     TEXT NOT NULL,          -- pending | paid | failed
-  usdCents   INTEGER,                 -- fiat actually sent (manual X Money / bank), for the public feed
   createdAt  INTEGER NOT NULL
 );
 
@@ -57,7 +56,6 @@ for (const col of [
   ["payees", "rail", "TEXT"],
   ["payees", "bankRef", "TEXT"],
   ["payees", "payoutHint", "TEXT"],
-  ["payouts", "usdCents", "INTEGER"],
 ] as const) {
   const cols = db.prepare(`PRAGMA table_info(${col[0]})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === col[1])) {
@@ -110,33 +108,13 @@ export function allPayees() {
 // ---- payouts ----
 export function recordPayout(p: {
   payeeId: string; handle: string; rail: string; amountWei: string;
-  ref: string | null; mode: string; status: string; usdCents?: number | null;
+  ref: string | null; mode: string; status: string;
 }) {
   const r = db.prepare(
-    `INSERT INTO payouts (payeeId, handle, rail, amountWei, ref, mode, status, usdCents, createdAt)
-     VALUES (@payeeId, @handle, @rail, @amountWei, @ref, @mode, @status, @usdCents, @createdAt)`,
-  ).run({ usdCents: null, ...p, createdAt: Date.now() });
+    `INSERT INTO payouts (payeeId, handle, rail, amountWei, ref, mode, status, createdAt)
+     VALUES (@payeeId, @handle, @rail, @amountWei, @ref, @mode, @status, @createdAt)`,
+  ).run({ ...p, createdAt: Date.now() });
   return r.lastInsertRowid as number;
-}
-
-/** Totals for the public Payments panel: fiat paid + count, split by rail. */
-export function payoutStats() {
-  const rows = db.prepare(
-    `SELECT rail, COUNT(*) AS n, COALESCE(SUM(usdCents),0) AS cents
-     FROM payouts WHERE status = 'paid' GROUP BY rail`,
-  ).all() as { rail: string; n: number; cents: number }[];
-  const out: Record<string, { count: number; usdCents: number }> = {};
-  for (const r of rows) out[r.rail] = { count: r.n, usdCents: r.cents };
-  return out;
-}
-
-/** Flip a pending payout to paid (after a manual X Money / bank send). */
-export function setPayoutPaid(id: number, ref: string | null, usdCents: number | null) {
-  return db.prepare(`UPDATE payouts SET status='paid', ref=COALESCE(?,ref), usdCents=COALESCE(?,usdCents) WHERE id=?`)
-    .run(ref, usdCents, id).changes;
-}
-export function getPayout(id: number) {
-  return db.prepare(`SELECT * FROM payouts WHERE id=?`).get(id) as any | undefined;
 }
 export function recentPayouts(limit = 50) {
   return db.prepare(`SELECT * FROM payouts ORDER BY id DESC LIMIT ?`).all(limit) as any[];

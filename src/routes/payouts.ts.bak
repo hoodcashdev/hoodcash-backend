@@ -3,7 +3,7 @@ import { formatUnits } from "viem";
 import { config } from "../config.js";
 import { publicClient, walletClient, sendAndWait } from "../chain.js";
 import { routerAbi } from "../abi.js";
-import { allPayees, tokensForPayee, setPayeeBank, getPayee, recordPayout, recentPayouts, getSession, setPayeeRail, payoutStats, setPayoutPaid, getPayout } from "../db.js";
+import { allPayees, tokensForPayee, setPayeeBank, getPayee, recordPayout, recentPayouts, getSession, setPayeeRail } from "../db.js";
 import { payeeId } from "../payee.js";
 import { stripeTransfer, stripeEnabled } from "../payouts/stripe.js";
 
@@ -144,45 +144,7 @@ payoutsRouter.post("/link-start", (req, res) => {
 /** Public payout stream for the site's "every payout public" feed. */
 payoutsRouter.get("/recent", (_req, res) => {
   const rows = recentPayouts(50).map((p) => ({
-    id: p.id, handle: p.handle, rail: p.rail, amountWei: p.amountWei,
-    usdCents: p.usdCents ?? null, mode: p.mode, status: p.status, at: p.createdAt,
+    handle: p.handle, rail: p.rail, amountWei: p.amountWei, mode: p.mode, status: p.status, at: p.createdAt,
   }));
   return res.json({ ok: true, payouts: rows });
-});
-
-/** Public totals for the site's Payments panel (fiat paid, split by rail). */
-payoutsRouter.get("/stats", (_req, res) => {
-  const stats = payoutStats();
-  const xmoney = stats["xmoney"] ?? { count: 0, usdCents: 0 };
-  const bank = stats["bank"] ?? { count: 0, usdCents: 0 };
-  return res.json({ ok: true, xmoney, bank });
-});
-
-/**
- * Operator: record a manual X Money / bank payout as PAID (for the public feed & totals).
- * You off-ramp + send from the X Money app yourself, then log it here.
- * Body: { handle, platform?, rail?, usd, note?, amountWei? }  — usd in dollars (e.g. 25 or 25.50)
- */
-payoutsRouter.post("/mark-paid", adminOnly, (req, res) => {
-  const { handle, platform = "x", rail = "xmoney", usd, note = null, amountWei = "0" } = req.body ?? {};
-  if (!handle) return res.status(400).json({ error: "missing handle" });
-  const usdCents = usd != null ? Math.round(Number(usd) * 100) : null;
-  if (usd != null && (!isFinite(Number(usd)) || Number(usd) < 0)) return res.status(400).json({ error: "bad usd amount" });
-  const pid = payeeId(platform, handle);
-  const id = recordPayout({
-    payeeId: pid, handle, rail, amountWei: String(amountWei),
-    ref: note, mode: "manual", status: "paid", usdCents,
-  });
-  return res.json({ ok: true, id, handle, rail, usdCents });
-});
-
-/** Operator: flip an existing pending payout to paid. Body: { id, note?, usd? } */
-payoutsRouter.post("/confirm", adminOnly, (req, res) => {
-  const { id, note = null, usd } = req.body ?? {};
-  if (!id) return res.status(400).json({ error: "missing id" });
-  const row = getPayout(Number(id));
-  if (!row) return res.status(404).json({ error: "unknown payout" });
-  const usdCents = usd != null ? Math.round(Number(usd) * 100) : null;
-  const changed = setPayoutPaid(Number(id), note, usdCents);
-  return res.json({ ok: true, id: Number(id), changed });
 });
