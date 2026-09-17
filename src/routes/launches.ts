@@ -32,18 +32,27 @@ async function register(opts: { token: string; handle: string; platform: string;
   upsertPayee({ payeeId: pid, platform: opts.platform, handle: opts.handle.replace(/^@/, ""), rail: opts.rail });
 
   let txHash: string | undefined;
+  let alreadyRegistered = false;
   try {
-    const receipt = await sendAndWait(
-      () => walletClient.writeContract({
-        address: config.router, abi: routerAbi, functionName: "registerToken",
-        args: [tokenAddr, pid, asset, pad],
-      }),
-      `registerToken(${tokenAddr})`,
-    );
-    txHash = receipt.transactionHash;
-  } catch (e: any) {
-    // AlreadyRegistered (or a re-submit) is fine — keep going.
-    if (!/AlreadyRegistered|already/i.test(e?.message ?? "")) throw e;
+    const info = (await publicClient.readContract({
+      address: config.router, abi: routerAbi, functionName: "tokenInfo", args: [tokenAddr],
+    })) as readonly [ `0x${string}`, boolean ];
+    alreadyRegistered = Array.isArray(info) ? !!info[1] : !!(info as any)?.registered;
+  } catch { /* fall through to attempt registration */ }
+  if (!alreadyRegistered) {
+    try {
+      const receipt = await sendAndWait(
+        () => walletClient.writeContract({
+          address: config.router, abi: routerAbi, functionName: "registerToken",
+          args: [tokenAddr, pid, asset, pad],
+        }),
+        `registerToken(${tokenAddr})`,
+      );
+      txHash = receipt.transactionHash;
+    } catch (e: any) {
+      // AlreadyRegistered (raw selector 0x3a81d6fc) or a re-submit is fine — keep going to bind.
+      if (!/AlreadyRegistered|already|0x3a81d6fc/i.test(e?.message ?? "")) throw e;
+    }
   }
   upsertToken({ address: tokenAddr, payeeId: pid, asset, launchpad: pad, creator: opts.creator ?? null, logo: opts.logo ?? null, curve: opts.curve ?? null });
 

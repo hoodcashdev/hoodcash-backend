@@ -15,6 +15,10 @@ export const registryAbi = [
 ] as const;
 
 export const routerAbi = [
+  { type: "function", name: "tokenInfo", stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "payeeId", type: "bytes32" }, { name: "registered", type: "bool" }] },
+  { type: "error", name: "AlreadyRegistered", inputs: [] },
   { type: "function", name: "registerToken", stateMutability: "nonpayable", inputs: [
     { name: "token", type: "address" }, { name: "payeeId", type: "bytes32" },
     { name: "asset", type: "address" }, { name: "launchpad", type: "address" },
