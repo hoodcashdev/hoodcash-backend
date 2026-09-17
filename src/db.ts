@@ -217,3 +217,14 @@ export function getMeta(k: string): string | undefined {
 export function setMeta(k: string, v: string) {
   db.prepare(`INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v`).run(k, v);
 }
+
+
+// ---- coin images (hosted so Pons + terminals can show them via the launch `logo` URL) ----
+db.exec(`CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, mime TEXT NOT NULL, bytes BLOB NOT NULL, createdAt INTEGER)`);
+export function putImage(id: string, mime: string, bytes: Buffer) {
+  db.prepare(`INSERT OR REPLACE INTO images (id, mime, bytes, createdAt) VALUES (?,?,?,?)`).run(id, mime, bytes, Date.now());
+}
+export function getImage(id: string): { mime: string; bytes: Buffer } | undefined {
+  const r = db.prepare(`SELECT mime, bytes FROM images WHERE id = ?`).get(id) as any;
+  return r ? { mime: r.mime, bytes: r.bytes as Buffer } : undefined;
+}

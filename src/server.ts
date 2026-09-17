@@ -10,9 +10,12 @@ import { offrampsRouter } from "./routes/offramps.js";
 import { config } from "./config.js";
 import { account } from "./chain.js";
 
+import { putImage, getImage } from "./db.js";
+import { randomBytes } from "node:crypto";
+
 export function createServer() {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "4mb" }));
 
   // CORS — the static frontend (hoodcash.site + www) POSTs to /launches/submit.
   // Allow the configured origin(s) (comma-separated ok) plus any *.hoodcash.site and the apex.
@@ -33,6 +36,35 @@ export function createServer() {
   });
 
   app.get("/health", (_req, res) => res.json({ ok: true, keeper: account.address }));
+
+  // ---- coin image hosting: store an uploaded image, serve it at a public URL ----
+  app.post("/media", (req, res) => {
+    try {
+      const img: string = (req.body && req.body.image) || "";
+      const m = /^data:([^;]+);base64,(.+)$/.exec(img);
+      if (!m) return res.status(400).json({ error: "bad image" });
+      const mime = m[1];
+      if (!/^image\//.test(mime)) return res.status(400).json({ error: "not an image" });
+      const bytes = Buffer.from(m[2], "base64");
+      if (bytes.length > 3_000_000) return res.status(413).json({ error: "too large" });
+      const ext = (mime.split("/")[1] || "png").replace(/[^a-z0-9]/g, "");
+      const id = randomBytes(8).toString("hex") + "." + ext;
+      putImage(id, mime, bytes);
+      const host = req.get("host");
+      const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0];
+      return res.json({ ok: true, url: `${proto}://${host}/media/${id}` });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message ?? String(e) });
+    }
+  });
+  app.get("/media/:id", (req, res) => {
+    const im = getImage(req.params.id);
+    if (!im) return res.status(404).end();
+    res.setHeader("Content-Type", im.mime);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    return res.end(im.bytes);
+  });
 
   app.use("/auth", authRouter);         // GET /auth/x/start, GET /auth/x/callback
   app.use("/bind", bindRouter);         // POST /bind, GET /bind/message
