@@ -29,7 +29,7 @@ payoutsRouter.get("/", adminOnly, async (_req, res) => {
       try {
         claimable = (await publicClient.readContract({
           address: config.router, abi: routerAbi, functionName: "claimable",
-          args: [p.payeeId, config.defaultPairAsset],
+          args: [p.payeeId],
         })) as bigint;
       } catch { /* ignore */ }
       rows.push({
@@ -89,7 +89,7 @@ payoutsRouter.post("/execute", adminOnly, async (req, res) => {
 
     const owed = (await publicClient.readContract({
       address: config.router, abi: routerAbi, functionName: "claimable",
-      args: [pid, config.defaultPairAsset],
+      args: [pid],
     })) as bigint;
     if (owed === 0n) return res.status(400).json({ error: "nothing owed" });
 
@@ -98,7 +98,7 @@ payoutsRouter.post("/execute", adminOnly, async (req, res) => {
       await sendAndWait(
         () => walletClient.writeContract({
           address: config.router, abi: routerAbi, functionName: "pushPayout",
-          args: [pid, config.defaultPairAsset, owed],
+          args: [pid, owed],
         }),
         `pushPayout(${handle} ${owed})`,
       );
@@ -144,7 +144,7 @@ payoutsRouter.post("/link-start", (req, res) => {
 /** Protocol (15%) fees accrued in the Router + whether the keeper can claim them. */
 payoutsRouter.get("/protocol", adminOnly, async (_req, res) => {
   try {
-    const accrued = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "protocolAccrued", args: [config.defaultPairAsset] })) as bigint;
+    const accrued = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "protocolAccrued", args: [] })) as bigint;
     const treasury = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "treasury", args: [] })) as string;
     const keeperCanClaim = treasury.toLowerCase() === account.address.toLowerCase();
     return res.json({ ok: true, accruedWei: accrued.toString(), accrued: formatUnits(accrued, 18), treasury, keeper: account.address, keeperCanClaim });
@@ -154,10 +154,10 @@ payoutsRouter.get("/protocol", adminOnly, async (_req, res) => {
 /** Claim the accrued 15% to the treasury (works once treasury == keeper). */
 payoutsRouter.post("/claim-protocol", adminOnly, async (_req, res) => {
   try {
-    const accrued = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "protocolAccrued", args: [config.defaultPairAsset] })) as bigint;
+    const accrued = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "protocolAccrued", args: [] })) as bigint;
     if (accrued === 0n) return res.status(400).json({ error: "nothing accrued" });
     const receipt = await sendAndWait(
-      () => walletClient.writeContract({ address: config.router, abi: routerAbi, functionName: "claimProtocol", args: [config.defaultPairAsset, accrued] }),
+      () => walletClient.writeContract({ address: config.router, abi: routerAbi, functionName: "claimProtocol", args: [accrued] }),
       `claimProtocol(${accrued})`,
     );
     return res.json({ ok: true, amountWei: accrued.toString(), amount: formatUnits(accrued, 18), tx: receipt.transactionHash });
@@ -173,10 +173,10 @@ payoutsRouter.post("/sweep", adminOnly, async (req, res) => {
     const payee = getPayee(pid);
     if (!payee) return res.status(404).json({ error: "unknown handle" });
     if (!payee.wallet) return res.status(400).json({ error: "not bound yet — needs a launch registered to this handle" });
-    const owed = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "claimable", args: [pid, config.defaultPairAsset] })) as bigint;
+    const owed = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "claimable", args: [pid] })) as bigint;
     if (owed === 0n) return res.status(400).json({ error: "nothing to sweep" });
     const receipt = await sendAndWait(
-      () => walletClient.writeContract({ address: config.router, abi: routerAbi, functionName: "pushPayout", args: [pid, config.defaultPairAsset, owed] }),
+      () => walletClient.writeContract({ address: config.router, abi: routerAbi, functionName: "pushPayout", args: [pid, owed] }),
       `sweep(${handle} ${owed})`,
     );
     return res.json({ ok: true, handle, amountWei: owed.toString(), amount: formatUnits(owed, 18), to: payee.wallet, tx: receipt.transactionHash });

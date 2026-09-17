@@ -43,7 +43,7 @@ claimablesRouter.get("/", async (req, res) => {
     const assets = Array.from(new Set(tokens.map((t) => getAddress(t.asset))));
     const fees = await Promise.all(assets.map(async (asset) => {
       const amount = (await publicClient.readContract({
-        address: config.router, abi: routerAbi, functionName: "claimable", args: [pid, asset],
+        address: config.router, abi: routerAbi, functionName: "claimable", args: [pid],
       })) as bigint;
       const { symbol, decimals } = await tokenMeta(asset);
       return { asset, symbol, amount: amount.toString(), display: formatUnits(amount, decimals) };

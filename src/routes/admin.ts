@@ -28,12 +28,12 @@ adminRouter.post("/sync", async (_req, res) => {
 /** Push a payee's fees to their bound wallet: { payeeId, asset, amount } */
 adminRouter.post("/push-fees", async (req, res) => {
   try {
-    const { payeeId, asset, amount } = req.body ?? {};
-    if (!payeeId || !isAddress(asset) || !amount) return res.status(400).json({ error: "bad params" });
+    const { payeeId, amount } = req.body ?? {};
+    if (!payeeId || !amount) return res.status(400).json({ error: "bad params" });
     const receipt = await sendAndWait(
       () => walletClient.writeContract({
         address: config.router, abi: routerAbi, functionName: "pushPayout",
-        args: [payeeId, getAddress(asset), BigInt(amount)],
+        args: [payeeId, BigInt(amount)],
       }),
       `pushPayout`,
     );
