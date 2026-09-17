@@ -29,6 +29,11 @@ export const routerAbi = [
   { type: "function", name: "pushPayout", stateMutability: "nonpayable", inputs: [
     { name: "payeeId", type: "bytes32" }, { name: "asset", type: "address" }, { name: "amount", type: "uint256" },
   ], outputs: [] },
+  { type: "function", name: "protocolAccrued", stateMutability: "view",
+    inputs: [{ name: "asset", type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "treasury", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "claimProtocol", stateMutability: "nonpayable",
+    inputs: [{ name: "asset", type: "address" }, { name: "amount", type: "uint256" }], outputs: [] },
   { type: "event", name: "TokenRegistered", inputs: [
     { name: "token", type: "address", indexed: true },
     { name: "payeeId", type: "bytes32", indexed: true },

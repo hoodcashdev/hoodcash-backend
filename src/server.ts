@@ -90,6 +90,11 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
     <button id="btnOff">Log off-ramp</button>
   </div><div id="omsg" class="sub" style="margin-top:8px"></div>
 </div>
+<div class="card"><b>Protocol fees (15%)</b>
+  <div id="pfstat" class="sub" style="margin-top:8px">—</div>
+  <button id="btnClaim" style="margin-top:6px">Claim 15% to keeper</button>
+  <div id="cmsg" class="sub" style="margin-top:8px"></div>
+</div>
 <div class="card"><b>Recent payouts</b><div id="recent" class="muted" style="margin-top:8px">—</div></div>
 <div class="card"><b>Recent off-ramps</b><div id="orecent" class="muted" style="margin-top:8px">—</div></div>
 <script>
@@ -105,6 +110,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
   $('btnRefresh').onclick=load;
   $('btnPay').onclick=markPaid;
   $('btnOff').onclick=logOfframp;
+  $('btnClaim').onclick=claimProtocol;
   $('worklist').addEventListener('click',function(e){
     var b=e.target.closest('button[data-h]'); if(!b)return;
     $('h').value=b.getAttribute('data-h');
@@ -159,6 +165,32 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
     }catch(e){}
   }
   function ethf(wei){ if(wei==null)return '—'; try{var v=Number(BigInt(wei))/1e18; return (v>0&&v<0.0001?v.toExponential(2):v.toFixed(4))+' ETH';}catch(e){return '—';} }
+  async function loadProtocol(){
+    if(!T)return;
+    try{
+      var r=await fetch('/payouts/protocol',{headers:H()});
+      if(r.status===401)return;
+      var j=await r.json();
+      var el=$('pfstat');
+      if(j.ok){
+        el.className='sub';
+        el.innerHTML='<b class="ok">'+(+j.accrued).toFixed(6)+' WETH</b> accrued · treasury '+j.treasury.slice(0,8)+'…';
+        var btn=$('btnClaim');
+        if(j.keeperCanClaim){ btn.style.display=''; }
+        else { btn.style.display='none'; el.innerHTML+='<br><span class="muted">Claim from the treasury wallet ('+j.treasury.slice(0,10)+'…) — the keeper isn\'t the treasury.</span>'; }
+      } else el.textContent=j.error||'—';
+    }catch(e){}
+  }
+  async function claimProtocol(){
+    var cm=$('cmsg');
+    try{
+      cm.textContent='Claiming…';cm.className='sub';
+      var r=await fetch('/payouts/claim-protocol',{method:'POST',headers:H()});
+      var j=await r.json();
+      if(j.ok){cm.textContent='Claimed '+(+j.amount).toFixed(6)+' WETH to keeper.';cm.className='sub ok';loadProtocol();}
+      else{cm.textContent=j.error||'Failed.';cm.className='sub err';}
+    }catch(e){cm.textContent='Network error.';cm.className='sub err';}
+  }
   async function loadOfframps(){
     try{
       var r=await fetch('/offramps/recent');var j=await r.json();var os=j.offramps||[];
@@ -169,7 +201,7 @@ th{color:#8aa08a;font-weight:500;border-bottom:1px solid #1c271a}td{border-botto
         }).join('')+'</table>' : '<span class="muted">No off-ramps logged yet.</span>';
     }catch(e){}
   }
-  if(T){load();loadOfframps();} else {loadRecent();loadOfframps();}
+  if(T){load();loadOfframps();loadProtocol();} else {loadRecent();loadOfframps();}
 })();
 </script></body></html>`);
   });

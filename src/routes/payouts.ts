@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { formatUnits } from "viem";
 import { config } from "../config.js";
-import { publicClient, walletClient, sendAndWait } from "../chain.js";
+import { publicClient, walletClient, sendAndWait, account } from "../chain.js";
 import { routerAbi } from "../abi.js";
 import { allPayees, tokensForPayee, setPayeeBank, getPayee, recordPayout, recentPayouts, getSession, setPayeeRail, payoutStats, setPayoutPaid, getPayout } from "../db.js";
 import { payeeId } from "../payee.js";
@@ -139,6 +139,29 @@ payoutsRouter.post("/link-start", (req, res) => {
     return res.json({ ok: true, mode: "stripe", message: "Bank onboarding is being set up — you'll get a secure Stripe link shortly." });
   }
   return res.json({ ok: true, mode: "manual", message: "You're connected. Bank payouts open as soon as our Stripe partner is live — we'll reach out at @" + sess.handle + "." });
+});
+
+/** Protocol (15%) fees accrued in the Router + whether the keeper can claim them. */
+payoutsRouter.get("/protocol", adminOnly, async (_req, res) => {
+  try {
+    const accrued = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "protocolAccrued", args: [config.defaultPairAsset] })) as bigint;
+    const treasury = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "treasury", args: [] })) as string;
+    const keeperCanClaim = treasury.toLowerCase() === account.address.toLowerCase();
+    return res.json({ ok: true, accruedWei: accrued.toString(), accrued: formatUnits(accrued, 18), treasury, keeper: account.address, keeperCanClaim });
+  } catch (e: any) { return res.status(500).json({ error: e?.message ?? String(e) }); }
+});
+
+/** Claim the accrued 15% to the treasury (works once treasury == keeper). */
+payoutsRouter.post("/claim-protocol", adminOnly, async (_req, res) => {
+  try {
+    const accrued = (await publicClient.readContract({ address: config.router, abi: routerAbi, functionName: "protocolAccrued", args: [config.defaultPairAsset] })) as bigint;
+    if (accrued === 0n) return res.status(400).json({ error: "nothing accrued" });
+    const receipt = await sendAndWait(
+      () => walletClient.writeContract({ address: config.router, abi: routerAbi, functionName: "claimProtocol", args: [config.defaultPairAsset, accrued] }),
+      `claimProtocol(${accrued})`,
+    );
+    return res.json({ ok: true, amountWei: accrued.toString(), amount: formatUnits(accrued, 18), tx: receipt.transactionHash });
+  } catch (e: any) { return res.status(500).json({ error: e?.message ?? String(e) }); }
 });
 
 /** Public payout stream for the site's "every payout public" feed. */
