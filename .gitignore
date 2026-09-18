@@ -5,3 +5,6 @@ data/
 
 src/**/*.bak
 src/*.bak*
+
+*.bak
+*.bak[0-9]*
