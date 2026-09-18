@@ -9,6 +9,7 @@ import { payoutsRouter } from "./routes/payouts.js";
 import { offrampsRouter } from "./routes/offramps.js";
 import { config } from "./config.js";
 import { cardsPageB64 } from "./cardsPage.js";
+import { flywheelPageB64 } from "./flywheelPage.js";
 import { account } from "./chain.js";
 
 import { putImage, getImage } from "./db.js";
@@ -80,6 +81,11 @@ export function createServer() {
   app.get("/cards", (_req, res) => {
     res.set("Cache-Control", "no-store");
     res.type("html").send(Buffer.from(cardsPageB64, "base64").toString("utf8"));
+  });
+
+  app.get("/flywheel", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.type("html").send(Buffer.from(flywheelPageB64, "base64").toString("utf8"));
   });
 
   app.get("/ops", (_req, res) => {
