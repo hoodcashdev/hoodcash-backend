@@ -128,6 +128,7 @@ async function ethUsdServer(): Promise<number | null> {
   return ethPx ? ethPx.usd : null; // last-good, or null
 }
 launchesRouter.get("/list", async (_req, res) => {
+  res.set("Cache-Control", "no-store");
   try {
     if (listCache && Date.now() - listCache.at < LIST_TTL) return res.json(listCache.body);
     const toks = allTokens().slice(0, 60);
