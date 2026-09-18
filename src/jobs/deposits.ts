@@ -1,44 +1,46 @@
 import { getAddress } from "viem";
 import { config } from "../config.js";
-import { publicClient } from "../chain.js";
-import { recordOfframp, getMeta, setMeta } from "../db.js";
+import { recordOfframp } from "../db.js";
 
-const CURSOR = "lastDepositBlock";
-const MAX_BLOCKS_PER_RUN = 750n;
+// Robinhood Chain block explorer (Blockscout) REST API — reliable, keyless.
+const EXPLORER = "https://robinhoodchain.blockscout.com/api/v2";
 
 /**
  * Auto-log off-ramp "deposits": any native ETH transfer INTO your Kraken deposit address.
- * It's your own deposit address, so anything arriving there is a deposit you made — we don't
- * care which wallet sent it. Native transfers aren't events, so we scan blocks (bounded per
- * run; starts at the chain tip on first run so we never rescan history).
+ * We read incoming transactions straight from the explorer (last page ≈ 50 txns) instead of
+ * scanning blocks one-by-one over RPC — far more reliable. Dedup is by tx hash (UNIQUE ref),
+ * so re-reading the same page never double-logs, and past deposits get backfilled once.
  */
 export async function scanDeposits(): Promise<void> {
   const kraken = config.krakenDeposit;
   if (!kraken) return;
-  const target = getAddress(kraken);
+  const target = getAddress(kraken).toLowerCase();
 
-  const latest = await publicClient.getBlockNumber();
-
-  const cur = getMeta(CURSOR);
-  if (cur == null) { setMeta(CURSOR, latest.toString()); return; } // first run: start fresh at tip
-
-  let from = BigInt(cur) + 1n;
-  if (from > latest) return;
-  const to = from + MAX_BLOCKS_PER_RUN - 1n > latest ? latest : from + MAX_BLOCKS_PER_RUN - 1n;
+  let items: any[] = [];
+  try {
+    const r = await fetch(`${EXPLORER}/addresses/${kraken}/transactions?filter=to`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) return;
+    const j: any = await r.json();
+    items = Array.isArray(j?.items) ? j.items : [];
+  } catch {
+    return; // transient explorer hiccup — try again next tick
+  }
 
   let found = 0;
-  for (let b = from; b <= to; b++) {
-    let block;
-    try { block = await publicClient.getBlock({ blockNumber: b, includeTransactions: true }); }
-    catch { continue; }
-    for (const tx of block.transactions as any[]) {
-      if (!tx || !tx.to) continue;
-      if (getAddress(tx.to) !== target) continue;
-      if (!tx.value || BigInt(tx.value) === 0n) continue;
-      const id = recordOfframp({ kind: "deposit", amountWei: BigInt(tx.value).toString(), dest: "Kraken", ref: tx.hash, mode: "auto" });
-      if (id !== -1) found++;
-    }
+  for (const tx of items) {
+    const to = String(tx?.to?.hash ?? tx?.to ?? "").toLowerCase();
+    if (to !== target) continue;
+    const val = String(tx?.value ?? "0");
+    if (!val || val === "0") continue;
+    const status = String(tx?.status ?? tx?.result ?? "").toLowerCase();
+    if (status && status !== "ok" && status !== "success") continue; // skip failed txns
+    const hash = tx?.hash;
+    if (!hash) continue;
+    const id = recordOfframp({ kind: "deposit", amountWei: val, dest: "Kraken", ref: hash, mode: "auto" });
+    if (id !== -1) found++;
   }
-  if (found) console.log(`[deposits] +${found} ETH->Kraken (${from}-${to})`);
-  setMeta(CURSOR, to.toString());
+  if (found) console.log(`[deposits] +${found} ETH->Kraken (explorer)`);
 }
