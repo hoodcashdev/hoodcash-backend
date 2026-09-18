@@ -97,7 +97,7 @@ launchesRouter.get("/list", async (_req, res) => {
       }
       const p = getPayee(t.payeeId);
       const feesWei = paidWeiForPayee(t.payeeId);
-      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString() };
+      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), createdAt: (t as any).createdAt ?? null };
     }));
     const body = { ok: true, tokens };
     listCache = { at: Date.now(), body };
