@@ -82,6 +82,30 @@ launchesRouter.get("/config", (_req, res) => {
 const metaMemo = new Map<string, { name: string; symbol: string }>(); // immutable, cache forever
 let listCache: { at: number; body: any } | null = null;
 const LIST_TTL = 20_000;
+// Per-token lifetime creator fees, from Pons's own market API (earnedForToken, in wei of the quote asset).
+// Cached per token; Pons is the source of truth for what a coin has generated across sweeps.
+const feesMemo = new Map<string, { at: number; wei: string }>();
+const FEES_TTL = 60_000;
+async function ponsEarnedWei(token: string): Promise<string> {
+  const key = token.toLowerCase();
+  const hit = feesMemo.get(key);
+  if (hit && Date.now() - hit.at < FEES_TTL) return hit.wei;
+  try {
+    const r = await fetch(`https://www.ponsfamily.com/api/pons-v2-market/${token}/creator-fees`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (r.ok) {
+      const j: any = await r.json();
+      const wei = String(j?.earnedForToken ?? "0");
+      feesMemo.set(key, { at: Date.now(), wei });
+      return wei;
+    }
+  } catch {}
+  if (hit) return hit.wei; // serve stale on error
+  feesMemo.set(key, { at: Date.now(), wei: "0" });
+  return "0";
+}
 launchesRouter.get("/list", async (_req, res) => {
   try {
     if (listCache && Date.now() - listCache.at < LIST_TTL) return res.json(listCache.body);
@@ -97,7 +121,8 @@ launchesRouter.get("/list", async (_req, res) => {
       }
       const p = getPayee(t.payeeId);
       const feesWei = paidWeiForPayee(t.payeeId);
-      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), createdAt: (t as any).createdAt ?? null };
+      const feesEarnedWei = await ponsEarnedWei(t.address);
+      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), feesEarnedWei, createdAt: (t as any).createdAt ?? null };
     }));
     const body = { ok: true, tokens };
     listCache = { at: Date.now(), body };
