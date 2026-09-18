@@ -127,6 +127,36 @@ async function ethUsdServer(): Promise<number | null> {
   }
   return ethPx ? ethPx.usd : null; // last-good, or null
 }
+
+// Live market cap per token from Pons's trade data (last trade price x fixed 1e9 supply x ETH/USD).
+// Works for curve and graduated coins; matches how Pons derives a coin's market cap. Cached per token.
+const mcMemo = new Map<string, { at: number; mc: number | null }>();
+const MC_TTL = 60_000;
+async function ponsMarketCapUsd(token: string, eu: number | null): Promise<number | null> {
+  if (eu == null) return null;
+  const key = token.toLowerCase();
+  const hit = mcMemo.get(key);
+  if (hit && Date.now() - hit.at < MC_TTL) return hit.mc;
+  try {
+    const r = await fetch(`https://www.ponsfamily.com/api/pons-v2-market/${token}/trades`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (r.ok) {
+      const j: any = await r.json();
+      const t0 = Array.isArray(j?.trades) ? j.trades[0] : null; // most recent trade
+      if (t0 && t0.quoteAmount && t0.tokenAmount && Number(t0.tokenAmount) > 0) {
+        const priceEth = Number(t0.quoteAmount) / Number(t0.tokenAmount); // ETH per token
+        const mc = priceEth * 1e9 * eu; // fixed 1,000,000,000 supply
+        mcMemo.set(key, { at: Date.now(), mc });
+        return mc;
+      }
+      mcMemo.set(key, { at: Date.now(), mc: null }); // no trades -> no market yet
+      return null;
+    }
+  } catch {}
+  return hit ? hit.mc : null;
+}
 launchesRouter.get("/list", async (_req, res) => {
   res.set("Cache-Control", "no-store");
   try {
@@ -144,8 +174,8 @@ launchesRouter.get("/list", async (_req, res) => {
       }
       const p = getPayee(t.payeeId);
       const feesWei = paidWeiForPayee(t.payeeId);
-      const feesEarnedWei = await ponsEarnedWei(t.address);
-      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), feesEarnedWei, feesEarnedUsd: (eu != null ? (Number(feesEarnedWei) / 1e18) * eu : null), createdAt: (t as any).createdAt ?? null };
+      const [feesEarnedWei, marketCapUsd] = await Promise.all([ponsEarnedWei(t.address), ponsMarketCapUsd(t.address, eu)]);
+      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), feesEarnedWei, feesEarnedUsd: (eu != null ? (Number(feesEarnedWei) / 1e18) * eu : null), marketCapUsd, createdAt: (t as any).createdAt ?? null };
     }));
     const body = { ok: true, ethUsd: eu, tokens };
     listCache = { at: Date.now(), body };
