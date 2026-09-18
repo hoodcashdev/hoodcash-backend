@@ -106,10 +106,32 @@ async function ponsEarnedWei(token: string): Promise<string> {
   feesMemo.set(key, { at: Date.now(), wei: "0" });
   return "0";
 }
+
+// Server-side ETH/USD price (Coinbase -> CoinGecko), cached — so the site never depends on the
+// visitor's own network to convert fees to USD.
+let ethPx: { at: number; usd: number } | null = null;
+const PX_TTL = 60_000;
+async function ethUsdServer(): Promise<number | null> {
+  if (ethPx && Date.now() - ethPx.at < PX_TTL) return ethPx.usd;
+  const srcs: [string, (j: any) => any][] = [
+    ["https://api.coinbase.com/v2/prices/ETH-USD/spot", (j) => j?.data?.amount],
+    ["https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd", (j) => j?.ethereum?.usd],
+  ];
+  for (const [url, pick] of srcs) {
+    try {
+      const r = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(6000) });
+      if (!r.ok) continue;
+      const v = Number(pick(await r.json()));
+      if (v > 0) { ethPx = { at: Date.now(), usd: v }; return v; }
+    } catch {}
+  }
+  return ethPx ? ethPx.usd : null; // last-good, or null
+}
 launchesRouter.get("/list", async (_req, res) => {
   try {
     if (listCache && Date.now() - listCache.at < LIST_TTL) return res.json(listCache.body);
     const toks = allTokens().slice(0, 60);
+    const eu = await ethUsdServer();
     const tokens = await Promise.all(toks.map(async (t) => {
       let meta = metaMemo.get(t.address);
       if (!meta) {
@@ -122,9 +144,9 @@ launchesRouter.get("/list", async (_req, res) => {
       const p = getPayee(t.payeeId);
       const feesWei = paidWeiForPayee(t.payeeId);
       const feesEarnedWei = await ponsEarnedWei(t.address);
-      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), feesEarnedWei, createdAt: (t as any).createdAt ?? null };
+      return { token: t.address, symbol: meta.symbol, name: meta.name, handle: p?.handle ?? null, creator: t.creator ?? null, logo: (t as any).logo ?? null, curve: (t as any).curve ?? null, feesWei: feesWei.toString(), feesEarnedWei, feesEarnedUsd: (eu != null ? (Number(feesEarnedWei) / 1e18) * eu : null), createdAt: (t as any).createdAt ?? null };
     }));
-    const body = { ok: true, tokens };
+    const body = { ok: true, ethUsd: eu, tokens };
     listCache = { at: Date.now(), body };
     return res.json(body);
   } catch (e: any) {
