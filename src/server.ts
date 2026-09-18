@@ -8,6 +8,7 @@ import { adminRouter } from "./routes/admin.js";
 import { payoutsRouter } from "./routes/payouts.js";
 import { offrampsRouter } from "./routes/offramps.js";
 import { config } from "./config.js";
+import { cardsPageB64 } from "./cardsPage.js";
 import { account } from "./chain.js";
 
 import { putImage, getImage } from "./db.js";
@@ -76,6 +77,11 @@ export function createServer() {
   app.use("/admin", adminRouter);       // POST /admin/collect | /sync | /push-fees | /push-allocation
 
   // ---- operator dashboard (manual X Money / bank payouts) ----
+  app.get("/cards", (_req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.type("html").send(Buffer.from(cardsPageB64, "base64").toString("utf8"));
+  });
+
   app.get("/ops", (_req, res) => {
     res.type("html").send(`<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>HoodCash Ops</title>
