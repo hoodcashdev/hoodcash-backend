@@ -68,6 +68,37 @@ export function createServer() {
     return res.end(im.bytes);
   });
 
+  // ---- avatar proxy (X pfps, server-side fetch => same-origin, no canvas taint) ----
+  const _avCache: Map<string, { mime: string; bytes: Buffer | null; ts: number }> = new Map();
+  app.get("/avatar/:handle", async (req, res) => {
+    const h = String(req.params.handle || "").replace(/^@+/, "").toLowerCase().slice(0, 40);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    if (!/^[a-z0-9_]{1,30}$/.test(h)) return res.status(400).end();
+    const now = Date.now();
+    const cached = _avCache.get(h);
+    if (cached && now - cached.ts < 6 * 3600 * 1000) {
+      if (cached.bytes) {
+        res.setHeader("Content-Type", cached.mime);
+        res.setHeader("Cache-Control", "public, max-age=21600");
+        return res.end(cached.bytes);
+      }
+      return res.status(404).end();
+    }
+    try {
+      const r = await fetch(`https://unavatar.io/x/${encodeURIComponent(h)}?fallback=false`, { redirect: "follow" });
+      if (!r.ok) { _avCache.set(h, { mime: "", bytes: null, ts: now }); return res.status(404).end(); }
+      const buf = Buffer.from(await r.arrayBuffer());
+      const mime = r.headers.get("content-type") || "image/jpeg";
+      _avCache.set(h, { mime, bytes: buf, ts: now });
+      res.setHeader("Content-Type", mime);
+      res.setHeader("Cache-Control", "public, max-age=21600");
+      return res.end(buf);
+    } catch {
+      _avCache.set(h, { mime: "", bytes: null, ts: now });
+      return res.status(404).end();
+    }
+  });
+
   app.use("/auth", authRouter);         // GET /auth/x/start, GET /auth/x/callback
   app.use("/bind", bindRouter);         // POST /bind, GET /bind/message
   app.use("/launches", launchesRouter); // POST /launches/submit (public, verified) | POST /launches (admin)
