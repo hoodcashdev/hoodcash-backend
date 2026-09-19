@@ -10,7 +10,9 @@ import { offrampsRouter } from "./routes/offramps.js";
 import { config } from "./config.js";
 import { cardsPageB64 } from "./cardsPage.js";
 import { flywheelPageB64 } from "./flywheelPage.js";
-import { account } from "./chain.js";
+import { account, publicClient } from "./chain.js";
+import { routerAbi, escrowAbi } from "./abi.js";
+import { formatUnits } from "viem";
 
 import { putImage, getImage } from "./db.js";
 import { randomBytes } from "node:crypto";
@@ -38,6 +40,45 @@ export function createServer() {
   });
 
   app.get("/health", (_req, res) => res.json({ ok: true, keeper: account.address }));
+
+  // ---- read-only balances snapshot (wind-down accounting) ----
+  app.get("/balances", async (_req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Cache-Control", "no-store");
+    try {
+      const router = config.router;
+      const treasury = (await publicClient.readContract({ address: router, abi: routerAbi, functionName: "treasury", args: [] })) as `0x${string}`;
+      const accrued = (await publicClient.readContract({ address: router, abi: routerAbi, functionName: "protocolAccrued", args: [] })) as bigint;
+      let escrowPool = 0n;
+      try { escrowPool = (await publicClient.readContract({ address: config.feeEscrow, abi: escrowAbi, functionName: "balanceOf", args: [config.collector] })) as bigint; } catch {}
+      const targets: Record<string, `0x${string}`> = {
+        custody_collector: config.collector,
+        keeper: account.address as `0x${string}`,
+        treasury,
+        deployer: "0xbCCf13940e4359B1143e12b08d5685AC163a4728",
+        router,
+        allocations: config.allocations,
+        registry: config.registry,
+      };
+      const native: Record<string, { address: string; wei: string; eth: string }> = {};
+      for (const k of Object.keys(targets)) {
+        const a = targets[k];
+        const b = a ? await publicClient.getBalance({ address: a }) : 0n;
+        native[k] = { address: a, wei: b.toString(), eth: formatUnits(b, 18) };
+      }
+      return res.json({
+        ok: true,
+        treasury,
+        protocolAccruedWei: accrued.toString(),
+        protocolAccruedEth: formatUnits(accrued, 18),
+        escrowPoolWei: escrowPool.toString(),
+        escrowPoolEth: formatUnits(escrowPool, 18),
+        native,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
+    }
+  });
 
   // ---- coin image hosting: store an uploaded image, serve it at a public URL ----
   app.post("/media", (req, res) => {
