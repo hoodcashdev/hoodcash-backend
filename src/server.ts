@@ -45,36 +45,37 @@ export function createServer() {
   app.get("/balances", async (_req, res) => {
     res.set("Access-Control-Allow-Origin", "*");
     res.set("Cache-Control", "no-store");
+    const f = (x: bigint) => formatUnits(x, 18);
     try {
-      const router = config.router;
-      const treasury = (await publicClient.readContract({ address: router, abi: routerAbi, functionName: "treasury", args: [] })) as `0x${string}`;
-      const accrued = (await publicClient.readContract({ address: router, abi: routerAbi, functionName: "protocolAccrued", args: [] })) as bigint;
+      const WETH = config.defaultPairAsset;
+      const nat = async (a: `0x${string}`) => (a ? await publicClient.getBalance({ address: a }) : 0n);
+      const weth = async (a: `0x${string}`) => { try { return (await publicClient.readContract({ address: WETH, abi: escrowAbi, functionName: "balanceOf", args: [a] })) as bigint; } catch { return 0n; } };
+
+      // check both the live router and the older one from local .env
+      const routerAddrs: `0x${string}`[] = [config.router, "0x6478cA8A1177d65147C94F5e4449455F644f7143"];
+      const routers: any[] = [];
+      for (const r of routerAddrs) {
+        let treasury = "", accrued = 0n;
+        try { treasury = (await publicClient.readContract({ address: r, abi: routerAbi, functionName: "treasury", args: [] })) as string; } catch {}
+        try { accrued = (await publicClient.readContract({ address: r, abi: routerAbi, functionName: "protocolAccrued", args: [] })) as bigint; } catch {}
+        routers.push({ router: r, treasury, protocolAccruedEth: f(accrued), nativeEth: f(await nat(r)), wethEth: f(await weth(r)) });
+      }
+
       let escrowPool = 0n;
       try { escrowPool = (await publicClient.readContract({ address: config.feeEscrow, abi: escrowAbi, functionName: "balanceOf", args: [config.collector] })) as bigint; } catch {}
-      const targets: Record<string, `0x${string}`> = {
+
+      const wallets: Record<string, `0x${string}`> = {
         custody_collector: config.collector,
-        keeper: account.address as `0x${string}`,
-        treasury,
+        treasury: "0xB4272396E9D41A825f3b67F5dBb75050d0C19199",
         deployer: "0xbCCf13940e4359B1143e12b08d5685AC163a4728",
-        router,
-        allocations: config.allocations,
-        registry: config.registry,
       };
-      const native: Record<string, { address: string; wei: string; eth: string }> = {};
-      for (const k of Object.keys(targets)) {
-        const a = targets[k];
-        const b = a ? await publicClient.getBalance({ address: a }) : 0n;
-        native[k] = { address: a, wei: b.toString(), eth: formatUnits(b, 18) };
+      const acct: Record<string, any> = {};
+      for (const k of Object.keys(wallets)) {
+        const a = wallets[k];
+        acct[k] = { address: a, nativeEth: f(await nat(a)), wethEth: f(await weth(a)) };
       }
-      return res.json({
-        ok: true,
-        treasury,
-        protocolAccruedWei: accrued.toString(),
-        protocolAccruedEth: formatUnits(accrued, 18),
-        escrowPoolWei: escrowPool.toString(),
-        escrowPoolEth: formatUnits(escrowPool, 18),
-        native,
-      });
+
+      return res.json({ ok: true, WETH, escrowPoolEth: f(escrowPool), routers, wallets: acct });
     } catch (e: any) {
       return res.status(500).json({ ok: false, error: e?.message ?? String(e) });
     }
